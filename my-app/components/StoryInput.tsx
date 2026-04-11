@@ -6,8 +6,8 @@ import { useTranslation } from "react-i18next"
 import { DotLottieReact } from '@lottiefiles/dotlottie-react' // Import the Lottie component
 
 interface StoryInputProps {
-  onSubmit: (storyData: string) => void
-  triggerCanvasDownload: () => void
+  onSubmit: (storyData: any) => void
+  triggerCanvasDownload: () => string | null | undefined
 }
 
 export default function StoryInput({ onSubmit, triggerCanvasDownload }: StoryInputProps) {
@@ -20,7 +20,7 @@ export default function StoryInput({ onSubmit, triggerCanvasDownload }: StoryInp
     setIsLoading(true)
     
     // Trigger the canvas download
-    triggerCanvasDownload()
+    const drawingBase64 = triggerCanvasDownload();
 
     // Submit the story
     try {
@@ -35,10 +35,14 @@ export default function StoryInput({ onSubmit, triggerCanvasDownload }: StoryInp
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ text: input, age: age }),
+          body: JSON.stringify({ text: input, age: age, image: drawingBase64 }),
         });
       const data = await response.json()
       console.log("Response from server:", data)
+      if (data.error) {
+        alert("Server Error (It might be an API Quota Issue): " + data.error)
+        return
+      }
       onSubmit(data)
     } catch (error) {
       console.error("Error:", error)

@@ -1,25 +1,40 @@
-from flask import Flask, request, jsonify
-from langchain_community.llms import Ollama
-from flask_cors import CORS
-import google.generativeai as genai
-import re
-from PIL import Image
-import base64
-from io import BytesIO
-import time
-import requests
-import io
-from huggingface_hub import InferenceClient
 import os
-import shutil
+import re
+import uuid
+import base64
+import time
+from io import BytesIO
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from dotenv import load_dotenv
+import google.generativeai as genai
+from huggingface_hub import InferenceClient
+from PIL import Image
+
+# Load environment variables
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
-client = InferenceClient("stabilityai/stable-diffusion-xl-base-1.0", token="")
-genai.configure(api_key="")
-model = genai.GenerativeModel("gemini-2.5-flash")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+HF_TOKEN_SD = os.getenv("HF_TOKEN_SD")
+HF_TOKEN_SD_XL = os.getenv("HF_TOKEN_SD_XL")
 
+try:
+    genai.configure(api_key=GEMINI_API_KEY)
+    gemini_model = genai.GenerativeModel("gemini-2.5-flash")
+except Exception as e:
+    print(f"Error configuring Gemini: {e}")
+    gemini_model = None
+
+try:
+    client_sd = InferenceClient("stabilityai/stable-diffusion-xl-base-1.0", token=HF_TOKEN_SD)
+    client_sd_xl = InferenceClient("stabilityai/stable-diffusion-xl-base-1.0", token=HF_TOKEN_SD_XL)
+except Exception as e:
+    print(f"Error configuring HuggingFace: {e}")
+    client_sd = None
+    client_sd_xl = None
 
 @app.after_request
 def after_request(response):
@@ -27,26 +42,15 @@ def after_request(response):
     response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
     return response
 
-
 # ============ STORYTELLER CORE LOGIC (AGE-BASED) ============
 
-def storyTeller(input_text, age=10):
-    # Get age-appropriate story instructions
-    story_instructions = get_age_appropriate_story_instructions(age)
-
-    response = model.generate_content(
-        f"{story_instructions}\n\nTell a story in exactly 4 paragraphs based on the given context: {input_text}"
-    )
-
-    ImageGen(response.text)  # Uncomment if you want to generate images automatically
-    return response.text
-
-
-# Helper function to provide age-appropriate story instructions
 def get_age_appropriate_story_instructions(age):
-    age = int(age)
-
-    if age < 7:
+    try:
+        age_int = int(age)
+    except (ValueError, TypeError):
+        age_int = 10
+        
+    if age_int < 7:
         return """
         Create a story for young children (under 7 years):
         - Use very simple words and short sentences
@@ -57,12 +61,8 @@ def get_age_appropriate_story_instructions(age):
         - Include friendly characters and happy endings
         - Vocabulary should be at preschool/kindergarten level
         - Make it engaging with simple adventures
-        - If generating quiz questions or multiple-choice answers:
-            * Keep each option extremely short (1–3 words)
-            * Avoid long phrases or sentences
-            * Use simple nouns or actions as choices
         """
-    elif age >= 7 and age < 13:
+    elif age_int >= 7 and age_int < 13:
         return """
         Create a story for children aged 7–12 years:
         - Use age-appropriate vocabulary with some challenging words
@@ -73,12 +73,8 @@ def get_age_appropriate_story_instructions(age):
         - Make characters relatable with realistic emotions
         - Keep the story engaging with some suspense or excitement
         - End with a satisfying resolution and positive message
-        - If generating quiz questions or multiple-choice answers:
-            * Keep each option concise (1–4 words)
-            * Avoid full sentences or explanations
-            * Make them distinct and easy to read
         """
-    elif age >= 13 and age <= 20:
+    elif age_int >= 13 and age_int <= 20:
         return """
         Create a story for teenagers aged 13–20 years:
         - Use sophisticated vocabulary and varied sentence structures
@@ -89,10 +85,6 @@ def get_age_appropriate_story_instructions(age):
         - Balance action with emotional depth and introspection
         - Make the story thought-provoking while still entertaining
         - Address age-appropriate challenges and life lessons
-        - If generating quiz questions or multiple-choice answers:
-            * Keep each option short and to the point (2–5 words)
-            * Avoid using full sentences
-            * Focus on clarity and precision
         """
     else:
         return """
@@ -106,17 +98,108 @@ def get_age_appropriate_story_instructions(age):
         - Balance narrative with philosophical or emotional resonance
         - Craft an ending that is meaningful and thought-provoking, not necessarily happy
         - Make the story intellectually and emotionally engaging
-        - If generating quiz questions or multiple-choice answers:
-            * Ensure options are concise (max 5 words)
-            * Avoid long phrases or full sentences
-            * Use short descriptive terms or keywords
         """
 
+def storyTeller(input_text, age=10, image_file=None):
+    story_instructions = get_age_appropriate_story_instructions(age)
+    if gemini_model is None:
+        raise ValueError("Gemini model is not initialized.")
+    
+    prompt = f"""
+{story_instructions}
+
+USER TEXT CONTEXT: "{input_text}"
+
+You are given the user's text prompt (if any) and an image of their drawing (if any).
+1. Image Analysis:
+   - If an image is provided and you can recognize what the drawing represents (e.g., a house, an animal, a car), identify it in a short phrase and output exactly: <drawing>the identified subject</drawing> (e.g., <drawing>a red car</drawing>).
+   - If the image is just scribbles or indistinguishable, OR if no image is provided, output exactly: <drawing>scribbles</drawing>.
+   
+2. Story Generation:
+   - If BOTH the user text and a recognizable drawing are present, combine them creatively (even if they conflict, e.g., a dinosaur text with spaceship drawing -> a dinosaur on a spaceship).
+   - If ONLY a recognizable drawing is present (user text is empty), write the story entirely around the subject of the drawing.
+   - If ONLY the user text is present (drawing is scribbles or empty), write the story entirely based on the user text.
+   - If BOTH are empty/scribbles, write a creative, original story appropriate for the age group.
+
+Tell the story in EXACTLY 4 paragraphs.
+"""
+
+    if image_file:
+        response = gemini_model.generate_content([prompt, image_file])
+    else:
+        response = gemini_model.generate_content(prompt)
+
+    raw_text = response.text
+    
+    drawing_desc = "scribbles"
+    match = re.search(r"<drawing>(.*?)</drawing>", raw_text, re.IGNORECASE)
+    if match:
+        drawing_desc = match.group(1).strip()
+        raw_text = re.sub(r"<drawing>.*?</drawing>", "", raw_text, flags=re.IGNORECASE).strip()
+
+    # Calling ImageGen concurrently or blocking
+    ImageGen(raw_text, drawing_desc)
+    return raw_text, drawing_desc
 
 # ============ QUIZBOT CORE LOGIC (AGE-BASED) ============
 
+def get_age_appropriate_quiz_instructions(age):
+    try:
+        age_int = int(age)
+    except (ValueError, TypeError):
+        age_int = 10
+        
+    if age_int < 7:
+        return """
+        Age Group: Under 7 years (Young Children)
+        - Use very simple vocabulary and short sentences
+        - Focus on basic concepts like colors, numbers, characters, and main events
+        - Keep each option extremely short (1–3 words)
+        """
+    elif age_int >= 7 and age_int < 13:
+        return """
+        Age Group: 7–12 years (Elementary to Middle School)
+        - Use age-appropriate vocabulary with moderate complexity
+        - Include questions about sequence of events, cause and effect, and character feelings
+        - Keep each option short (1–4 words)
+        """
+    elif age_int >= 13 and age_int <= 20:
+        return """
+        Age Group: 13–20 years (Teenagers)
+        - Use more sophisticated vocabulary and complex concepts
+        - Focus on themes, character development, symbolism, and deeper meanings
+        - Keep each option concise (2–5 words)
+        """
+    else:
+        return """
+        Age Group: 20+ years (Adults - Difficult Level)
+        - Use advanced and sophisticated vocabulary
+        - Create challenging questions that require deep analysis and critical thinking
+        - Keep options brief (max 5–6 words)
+        """
+
+def parse_quiz_response(response):
+    questions = re.split(r"(?=Question \d+:)", response.strip())
+    parsed_questions = []
+
+    for question in questions:
+        lines = question.strip().split("\n")
+        # Ensure we have enough valid lines before parsing
+        valid_lines = [line.strip() for line in lines if line.strip()]
+        if len(valid_lines) >= 6:
+            question_text = re.sub(r"^Question \d+:\s*", "", valid_lines[0]).strip()
+            options = valid_lines[1:5]
+            correct_answer = valid_lines[5].replace("Correct Answer: ", "").strip()
+
+            parsed_questions.append({
+                "question": question_text,
+                "options": options,
+                "correctAnswer": correct_answer
+            })
+            
+    return parsed_questions
+
 def quizBot(input_text, age=10):
-    # Get age-appropriate quiz instructions
     age_instructions = get_age_appropriate_quiz_instructions(age)
 
     text = f"""
@@ -138,260 +221,175 @@ def quizBot(input_text, age=10):
     Repeat for all 10 questions.
     """
 
-    response = model.generate_content(
+    response = gemini_model.generate_content(
         f"in the following format: {text} \n Frame 10 questions and give 4 options with one correct answer on the following story: {input_text}"
     )
 
-    print(response.text)
     quiz_data = parse_quiz_response(response.text)
-    print(quiz_data)
-
     return quiz_data
-
-
-def get_age_appropriate_quiz_instructions(age):
-    age = int(age)
-
-    if age < 7:
-        return """
-        Age Group: Under 7 years (Young Children)
-        - Use very simple vocabulary and short sentences
-        - Focus on basic concepts like colors, numbers, characters, and main events
-        - Questions should be about obvious and direct details from the story
-        - Keep language playful and easy to understand
-        - Avoid complex reasoning or abstract concepts
-        - Example: "What color was the ball?" or "Who was the main character?"
-        - If generating multiple-choice options:
-            * Keep each option extremely short (1–3 words)
-            * Avoid full sentences
-            * Use simple nouns or adjectives (e.g., "red", "dog", "sunny")
-        """
-
-    elif age >= 7 and age < 13:
-        return """
-        Age Group: 7–12 years (Elementary to Middle School)
-        - Use age-appropriate vocabulary with moderate complexity
-        - Include questions about sequence of events, cause and effect, and character feelings
-        - Test understanding of story structure and character motivations
-        - Mix direct recall questions with some basic inference questions
-        - Use clear language but introduce some analytical thinking
-        - Example: "Why did the character make that choice?" or "What happened after the big event?"
-        - If generating multiple-choice options:
-            * Keep each option short (1–4 words)
-            * Avoid long explanations
-            * Focus on clarity — make each choice distinct and easily understandable
-        """
-
-    elif age >= 13 and age <= 20:
-        return """
-        Age Group: 13–20 years (Teenagers)
-        - Use more sophisticated vocabulary and complex concepts
-        - Focus on themes, character development, symbolism, and deeper meanings
-        - Test critical thinking, analysis, and interpretation skills
-        - Include questions about literary devices and author's purpose
-        - Challenge students to think beyond surface-level details
-        - Example: "What theme does this story explore?" or "How does the setting influence the plot?"
-        - If generating multiple-choice options:
-            * Keep each option concise (2–5 words)
-            * Avoid using full sentences
-            * Use clear, content-focused phrases (e.g., "freedom vs control", "internal conflict")
-        """
-
-    else:
-        return """
-        Age Group: 20+ years (Adults - Difficult Level)
-        - Use advanced and sophisticated vocabulary
-        - Create challenging questions that require deep analysis and critical thinking
-        - Focus on complex themes, subtext, narrative techniques, and philosophical implications
-        - Test advanced comprehension including irony, paradox, ambiguity, and nuanced interpretation
-        - Include questions about contextual analysis, intertextuality, and comparative literature
-        - Challenge with questions that have subtle distinctions between answer choices
-        - Require synthesis of multiple story elements and abstract reasoning
-        - If generating multiple-choice options:
-            * Keep options brief (max 5–6 words)
-            * Avoid long, essay-like phrases
-            * Use abstract but compact phrases (e.g., "moral duality", "loss of innocence", "existential doubt")
-        """
-
-
-def parse_quiz_response(response):
-    questions = re.split(r"(?=Question \d+:)", response.strip())
-    parsed_questions = []
-
-    for question in questions:
-        lines = question.strip().split("\n")
-
-        if len(lines) >= 6:
-            question_text = re.sub(r"^Question \d+:\s*", "", lines[0]).strip()
-            options = [line.strip() for line in lines[1:5]]
-            correct_answer = lines[5].replace("Correct Answer: ", "").strip()
-
-            parsed_questions.append({
-                "question": question_text,
-                "options": options,
-                "correctAnswer": correct_answer
-            })
-
-    return parsed_questions
-
 
 # ============ IMAGE GENERATION ============
 
-
-def ImageGen(text):
+def ImageGen(text, drawing_desc="scribbles"):
     images_folder = "public/Images"
     public_folder = "public"
 
-    # --- Step 1: Empty the public/Images folder before generating ---
-    if os.path.exists(images_folder):
-        shutil.rmtree(images_folder)
     os.makedirs(images_folder, exist_ok=True)
+    
+    # We remove the wiping of the folder to ensure concurrent requests do not conflict
+    
+    ParaList = [p for p in text.split("\n\n") if p.strip()]
 
-    ParaList = text.split("\n\n")
+    num_chunks = min(len(ParaList) - 1, 3) if len(ParaList) > 1 else 0
 
-    # --- Step 2: Generate images for each paragraph except the last ---
-    for i in range(len(ParaList) - 1):
-        PromptImage = model.generate_content(
-            f"Generate a scenario-based prompt no more than 20 words to generate an image based on the following context: {ParaList[i]}"
-        )
-        print(f"🖼️ Prompt {i+1}: {PromptImage.text}")
-
+    for i in range(num_chunks):
+        if not client_sd:
+            print("HF Client SD is not initialized.")
+            break
+            
         try:
-            image = client.text_to_image(PromptImage.text)
+            if drawing_desc.lower() != "scribbles":
+                SD_prompt = f"Generate a scenario-based prompt no more than 20 words to generate an image based on the following context: {ParaList[i]}. MUST visibly feature: {drawing_desc}"
+            else:
+                SD_prompt = f"Generate a scenario-based prompt no more than 20 words to generate an image based on the following context: {ParaList[i]}"
+                
+            PromptImage = gemini_model.generate_content(SD_prompt)
+            image = client_sd.text_to_image(PromptImage.text)
             image.save(f"{images_folder}/Image{i + 1}.png")
         except Exception as e:
-            print(f"❌ Error generating Image{i+1}: {e}")
+            print(f"Error generating Image{i+1}: {e}")
 
-    # --- Step 3: Use the Stable Diffusion XL model via the new endpoint ---
     try:
-        client_1 = InferenceClient(
-            "stabilityai/stable-diffusion-xl-base-1.0",
-            token=""
-        )
-
-        PromptImage = model.generate_content(
-            f"Generate a scenario-based very short prompt to generate an image based on the following context: {ParaList[3]}"
-        )
-        print(f"🖼️ Final Prompt: {PromptImage.text}")
-
-        image = client_1.text_to_image(PromptImage.text)
-        image.save(f"{public_folder}/Image4.png")
-
+        if client_sd_xl and len(ParaList) > 0:
+            last_para_idx = min(3, len(ParaList)-1)
+            if drawing_desc.lower() != "scribbles":
+                SD_prompt = f"Generate a scenario-based very short prompt to generate an image based on the following context: {ParaList[last_para_idx]}. MUST visibly feature: {drawing_desc}"
+            else:
+                SD_prompt = f"Generate a scenario-based very short prompt to generate an image based on the following context: {ParaList[last_para_idx]}"
+                
+            PromptImage = gemini_model.generate_content(SD_prompt)
+            image = client_sd_xl.text_to_image(PromptImage.text)
+            image.save(f"{public_folder}/Image4.png")
     except Exception as e:
-        print(f"❌ Error generating final image: {e}")
-
-
-    print("✅ All images generated successfully and saved in /public.")
+        print(f"Error generating final image: {e}")
 
 
 # ============ FLASK ROUTES ============
 
 @app.route("/StoryTeller", methods=["POST"])
 def story_teller_route():
-    input_data = request.get_json()
-    input_text = input_data.get("text", "")
-    age = input_data.get("age", 10)
-    response = storyTeller(input_text, age)
-    return jsonify({"response": response})
-
-
-@app.route("/QuizBot", methods=["POST"])
-def quiz_bot_route():
-    input_data = request.get_json()
-    input_text = input_data.get("text", "")
-    age = input_data.get("age", 10)
-    response = quizBot(input_text, age)
-    return jsonify({"response": response})
-
-
-@app.route("/LearnBot", methods=["POST"])
-def learnBot():
-    input_data = request.get_json()
-    input_text = input_data.get("text", "")
-    image_base64 = input_data.get("image", "")
-
-    image = None
-    if image_base64:
-        try:
+    try:
+        input_data = request.get_json()
+        input_text = input_data.get("text", "")
+        age = input_data.get("age", 10)
+        image_base64 = input_data.get("image", None)
+        
+        image = None
+        if image_base64:
             if image_base64.startswith("data:image"):
                 image_base64 = image_base64.split(",")[1]
             image_data = base64.b64decode(image_base64)
             image = Image.open(BytesIO(image_data))
-        except Exception as e:
-            print("Error decoding or verifying image:", e)
-            return jsonify({"error": "Invalid image data"}), 400
 
+        story_text, drawing_desc = storyTeller(input_text, age, image_file=image)
+        return jsonify({"response": story_text, "drawing": drawing_desc})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/QuizBot", methods=["POST"])
+def quiz_bot_route():
     try:
+        input_data = request.get_json()
+        input_text = input_data.get("text", "")
+        age = input_data.get("age", 10)
+        response = quizBot(input_text, age)
+        return jsonify({"response": response})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/LearnBot", methods=["POST"])
+def learnBot():
+    try:
+        input_data = request.get_json()
+        input_text = input_data.get("text", "")
+        image_base64 = input_data.get("image", "")
+
+        image = None
+        if image_base64:
+            if image_base64.startswith("data:image"):
+                image_base64 = image_base64.split(",")[1]
+            image_data = base64.b64decode(image_base64)
+            image = Image.open(BytesIO(image_data))
+
         if image and input_text:
             prompt = f"You are an Ai Agent; correct user's mistakes if wrong, respond kindly: {input_text}"
-            response = model.generate_content([prompt, image])
+            response = gemini_model.generate_content([prompt, image])
         elif image:
             prompt = "You are an Ai Agent; correct user's text in the image if wrong, respond kindly."
-            response = model.generate_content([prompt, image])
+            response = gemini_model.generate_content([prompt, image])
         elif input_text:
             prompt = f"You are an Ai Agent; correct user's text if wrong, respond kindly: {input_text}"
-            response = model.generate_content(prompt)
+            response = gemini_model.generate_content(prompt)
         else:
             return jsonify({"error": "No valid input provided"}), 400
 
         return jsonify({"response": response.text})
     except Exception as e:
-        print("Error generating response:", e)
-        return jsonify({"error": "Failed to generate response"}), 500
+        print("Error in LearnBot:", e)
+        return jsonify({"error": "Failed to generate response", "details": str(e)}), 500
 
 
 @app.route("/AiSuggestionBot", methods=["GET"])
 def aiSuggestionBot():
-    text = """
-    Language Development: Language Development suggestion,
-    Physical Development: Physical Development suggestion,
-    Cognitive Skills: Cognitive Skills suggestion,
-    Communication Skills: Communication Skills suggestion,
-    """
-    response = model.generate_content(
-        f"Give 4 brief suggestions for parents on how to improve their child's development: {text}"
-    )
-    return jsonify({"response": response.text})
+    try:
+        text = "Language Development, Physical Development, Cognitive Skills, Communication Skills"
+        response = gemini_model.generate_content(
+            f"Give 4 brief suggestions for parents on how to improve their child's development focusing on: {text}"
+        )
+        return jsonify({"response": response.text})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
-def get_downloads_folder():
-    home = os.path.expanduser("~")
-    downloads_folder = os.path.join(home, "Downloads")
-    return downloads_folder
-
-
-@app.route("/VideoAnalyzer", methods=["GET"])
+@app.route("/VideoAnalyzer", methods=["POST"])
 def videoAnalyzer():
-    downloads_path = get_downloads_folder()
-    file_name = "Video.mp4"
-    video_file_name = os.path.join(downloads_path, file_name)
+    try:
+        if 'video' not in request.files:
+            return jsonify({"error": "No video file part in the request"}), 400
 
-    print(f"Checking for file {file_name} in Downloads folder...")
-    while not os.path.exists(video_file_name):
-        print(f"Waiting for {file_name} to be available...")
-        time.sleep(5)
+        video_file = request.files['video']
+        if video_file.filename == '':
+            return jsonify({"error": "No selected video file"}), 400
 
-    print(f"File {file_name} found. Uploading...")
-    video_file = genai.upload_file(path=video_file_name)
-    print(f"Completed upload: {video_file.uri}")
+        # Safe unique temp path
+        temp_dir = "temp_uploads"
+        os.makedirs(temp_dir, exist_ok=True)
+        unique_filename = f"{uuid.uuid4()}_{video_file.filename}"
+        video_path = os.path.join(temp_dir, unique_filename)
+        video_file.save(video_path)
 
-    while video_file.state.name == "PROCESSING":
-        print('Waiting for video to be processed.')
-        time.sleep(10)
-        video_file = genai.get_file(video_file.name)
+        # Upload to Gemini
+        gemini_video_file = genai.upload_file(path=video_path)
+        
+        while gemini_video_file.state.name == "PROCESSING":
+            time.sleep(2)
+            gemini_video_file = genai.get_file(gemini_video_file.name)
 
-    if video_file.state.name == "FAILED":
-        raise ValueError(video_file.state.name)
+        if gemini_video_file.state.name == "FAILED":
+            os.remove(video_path)
+            return jsonify({"error": "Video processing failed on Gemini servers"}), 500
 
-    print(f'Video processing complete: {video_file.uri}')
-    prompt = "Pretend like you're talking to the person in the video"
-    model = genai.GenerativeModel(model_name="models/gemini-2.5-flash")
+        prompt = "Pretend like you're talking to the person in the video. Analyze their body language or speech cautiously."
+        response = gemini_model.generate_content([prompt, gemini_video_file], request_options={"timeout": 600})
+        
+        # Clean up local file after processing
+        os.remove(video_path)
 
-    response = model.generate_content([prompt, video_file], request_options={"timeout": 600})
-    print(response.text)
-    os.remove(video_file_name)
-
-    return jsonify({"response": response.text})
+        return jsonify({"response": response.text})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":

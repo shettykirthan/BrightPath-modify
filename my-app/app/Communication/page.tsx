@@ -45,10 +45,13 @@ export default function VideoChat() {
     }
   }, [isRecording]) // Ensures re-initialization on dependency changes
 
-  const fetchVideoAnalysis = async () => {
+  const fetchVideoAnalysis = async (videoBlob: Blob) => {
     try {
+      const formData = new FormData();
+      formData.append("video", videoBlob, "Video.mp4");
       const response = await fetch("http://127.0.0.1:5000/VideoAnalyzer", {
-        method: "GET",
+        method: "POST",
+        body: formData,
       });
       const data = await response.json();
       console.log('Video analysis result:', data);
@@ -72,15 +75,16 @@ export default function VideoChat() {
         }
 
         mediaRecorder.onstop = async () => {
-          const blob = new Blob(chunksRef.current, { type: 'video/webm' })
-          const url = URL.createObjectURL(blob)
-          const a = document.createElement('a')
-          a.href = url
-          a.download = `Video.mp4`
-          document.body.appendChild(a)
-          a.click()
-          document.body.removeChild(a)
-          URL.revokeObjectURL(url)
+          const blob = new Blob(chunksRef.current, { type: 'video/mp4' })
+
+          // Send to backend directly
+          setIsProcessing(true);
+          const { response } = await fetchVideoAnalysis(blob);
+          setMessages((prev) => [
+            ...prev,
+            { type: "bot", content: response },
+          ]);
+          setIsProcessing(false);
         }
 
         mediaRecorderRef.current = mediaRecorder
@@ -112,17 +116,7 @@ const stopRecording = async () => {
       setCurrentSpeech(""); // clear the typing bubble
     }
 
-    setIsProcessing(true);
-
-    // Fetch backend analysis (bot reply only)
-    const { response } = await fetchVideoAnalysis();
-
-    setMessages((prev) => [
-      ...prev,
-      { type: "bot", content: response },
-    ]);
-
-    setIsProcessing(false);
+    // Backend fetch is handled in mediaRecorder.onstop
   }
 };
 

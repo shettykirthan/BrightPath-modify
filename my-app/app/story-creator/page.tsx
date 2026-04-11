@@ -15,13 +15,13 @@ export default function StoryCreator() {
   const router = useRouter()
   const bookRef = useRef<HTMLDivElement>(null)
   const [showBook, setShowBook] = useState(false)
-  const [story, setStory] = useState("")
+  const [story, setStory] = useState<any>("")
   const { t } = useTranslation()
 
   const canvasRef = useRef<DrawableCanvasRef>(null)
-  const [downloadCanvas, setDownloadCanvas] = useState<(() => void) | null>(null)
+  const [downloadCanvas, setDownloadCanvas] = useState<(() => string | null) | null>(null)
 
-  const handleSubmit = (storyText: string) => {
+  const handleSubmit = (storyText: any) => {
     console.log("Pages: ", storyText)
     setStory(storyText)
     setShowBook(true)
@@ -34,11 +34,11 @@ export default function StoryCreator() {
     }, 100)
   }
 
-  const navigateToQuiz = (storyText: string) => {
+  const navigateToQuiz = (storyText: any) => {
     router.push(`/quiz?story=${encodeURIComponent(storyText.response)}`)
   }
 
-  const setDownload = useCallback((fn: () => void) => {
+  const setDownload = useCallback((fn: () => string | null) => {
     setDownloadCanvas(() => fn)
   }, [])
 
@@ -69,6 +69,11 @@ export default function StoryCreator() {
               className="mt-16"
             >
               <h2 className="text-3xl font-bold text-blue-800 mb-8 font-serif text-center">{t("YourStorybook")}</h2>
+              {story && story.drawing && story.drawing !== "scribbles" && (
+                <p className="text-2xl font-bold text-center text-purple-600 mb-4 font-serif">
+                  AI noticed you drew: {story.drawing}!
+                </p>
+              )}
               <Book storyData={story} />
               <div className="mt-8 flex justify-center">
                 <Button

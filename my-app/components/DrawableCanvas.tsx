@@ -4,10 +4,10 @@ import { useRef, useEffect, useState, forwardRef, useImperativeHandle } from "re
 import { Pencil, Eraser } from "lucide-react"
 
 export interface DrawableCanvasRef {
-  downloadCanvas: () => void
+  downloadCanvas: () => string | null
 }
 
-const DrawableCanvas = forwardRef<DrawableCanvasRef, { setDownload: (fn: () => void) => void }>(
+const DrawableCanvas = forwardRef<DrawableCanvasRef, { setDownload: (fn: () => string | null) => void }>(
   ({ setDownload }, ref) => {
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const [isDrawing, setIsDrawing] = useState(false)
@@ -28,12 +28,9 @@ const DrawableCanvas = forwardRef<DrawableCanvasRef, { setDownload: (fn: () => v
     const downloadCanvas = () => {
       const canvas = canvasRef.current
       if (canvas) {
-        const image = canvas.toDataURL("image/png").replace("image/png", "image/octet-stream")
-        const link = document.createElement("a")
-        link.download = "canvas-drawing.png"
-        link.href = image
-        link.click()
+        return canvas.toDataURL("image/png")
       }
+      return null;
     }
 
     useImperativeHandle(ref, () => ({
