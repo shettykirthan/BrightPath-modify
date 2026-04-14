@@ -3,10 +3,9 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
 import PeekingCharacters from './PeekingCharacters'
-import Img4 from '../public/Image4.png'
 
 
-export default function Book({ storyData }: { storyData: string }) {
+export default function Book({ storyData }: { storyData: any }) {
   const [currentPage, setCurrentPage] = useState(0)
   const [isFlipping, setIsFlipping] = useState(false)
   const [flipDirection, setFlipDirection] = useState<'left' | 'right'>('right')
@@ -14,8 +13,10 @@ export default function Book({ storyData }: { storyData: string }) {
   console.log('Story data in Book component:', storyData);
 
   // ...existing code...
-const storyText = typeof storyData === "string" ? storyData : storyData.response ?? "";
-const pages = storyText.split('\n\n').map((paragraph, index) => ({
+const storyText = typeof storyData === "string" ? storyData : (storyData?.response ?? "");
+const storyParagraphs = storyText.split('\n\n').filter((p: string) => p.trim());
+// Ensure we have at least 4 pages (one for each generated image)
+const pages = storyParagraphs.map((paragraph: string, index: number) => ({
   content: paragraph.trim(),
   image: `/Images/Image${index}.png?timestamp=${new Date().getTime()}`,
 }));
@@ -137,9 +138,10 @@ const speakText = (text: string) => {
             <div className="absolute left-[400px] w-[400px] h-full bg-white p-8">
               <div className="w-full h-full relative">
                 <Image
-                  src={pages[currentPage + 1]?.image || Img4}
+                  src={pages[currentPage + 1]?.image || '/Images/placeholder.svg'}
                   alt="Story illustration"
                   fill
+                  unoptimized
                   className="object-cover rounded-lg"
                 />
               </div>
@@ -172,9 +174,10 @@ const speakText = (text: string) => {
                     ) : (
                       <div className="w-full h-full relative">
                         <Image
-                          src={pages[currentPage]?.image || "/placeholder.svg"}
+                          src={pages[currentPage]?.image || '/Images/placeholder.svg'}
                           alt="Story illustration"
                           fill
+                          unoptimized
                           className="object-cover rounded-lg"
                         />
                       </div>
@@ -191,9 +194,10 @@ const speakText = (text: string) => {
                     {flipDirection === 'right' ? (
                       <div className="w-full h-full relative">
                         <Image
-                          src={pages[currentPage + 1]?.image || ''}
+                          src={pages[currentPage + 1]?.image || '/Images/placeholder.svg'}
                           alt="Story illustration"
                           fill
+                          unoptimized
                           className="object-cover rounded-lg"
                         />
                       </div>

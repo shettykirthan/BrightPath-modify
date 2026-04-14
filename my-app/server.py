@@ -17,9 +17,8 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-HF_TOKEN_SD = os.getenv("HF_TOKEN_SD")
-HF_TOKEN_SD_XL = os.getenv("HF_TOKEN_SD_XL")
+
+#paste api keys
 
 try:
     genai.configure(api_key=GEMINI_API_KEY)
@@ -183,19 +182,35 @@ def parse_quiz_response(response):
     parsed_questions = []
 
     for question in questions:
+        if not question.strip():
+            continue
+            
         lines = question.strip().split("\n")
         # Ensure we have enough valid lines before parsing
         valid_lines = [line.strip() for line in lines if line.strip()]
+        
         if len(valid_lines) >= 6:
-            question_text = re.sub(r"^Question \d+:\s*", "", valid_lines[0]).strip()
-            options = valid_lines[1:5]
-            correct_answer = valid_lines[5].replace("Correct Answer: ", "").strip()
-
-            parsed_questions.append({
-                "question": question_text,
-                "options": options,
-                "correctAnswer": correct_answer
-            })
+            try:
+                question_text = re.sub(r"^Question \d+:\s*", "", valid_lines[0]).strip()
+                # Extract options and remove the letter prefix (e.g., "a)" or "a) ")
+                options = []
+                for i in range(1, 5):
+                    if i < len(valid_lines):
+                        opt = re.sub(r"^[a-d]\)\s*", "", valid_lines[i]).strip()
+                        options.append(opt)
+                
+                # Get correct answer from the last line
+                correct_answer = valid_lines[5].replace("Correct Answer:", "").replace("Correct Answer :", "").strip().lower()
+                
+                if len(options) == 4 and question_text and correct_answer:
+                    parsed_questions.append({
+                        "question": question_text,
+                        "options": options,
+                        "correctAnswer": correct_answer
+                    })
+            except Exception as e:
+                print(f"Error parsing question: {e}")
+                continue
             
     return parsed_questions
 
@@ -221,12 +236,17 @@ def quizBot(input_text, age=10):
     Repeat for all 10 questions.
     """
 
-    response = gemini_model.generate_content(
-        f"in the following format: {text} \n Frame 10 questions and give 4 options with one correct answer on the following story: {input_text}"
-    )
-
-    quiz_data = parse_quiz_response(response.text)
-    return quiz_data
+    try:
+        response = gemini_model.generate_content(
+            f"in the following format: {text} \n Frame 10 questions and give 4 options with one correct answer on the following story: {input_text}"
+        )
+        
+        quiz_data = parse_quiz_response(response.text)
+        print(f"Generated {len(quiz_data)} questions")
+        return quiz_data
+    except Exception as e:
+        print(f"Error in quizBot: {e}")
+        raise
 
 # ============ IMAGE GENERATION ============
 
@@ -303,10 +323,19 @@ def quiz_bot_route():
         input_data = request.get_json()
         input_text = input_data.get("text", "")
         age = input_data.get("age", 10)
+        
+        if not input_text:
+            return jsonify({"error": "No text provided"}), 400
+        
         response = quizBot(input_text, age)
+        
+        if not response or len(response) == 0:
+            return jsonify({"error": "Failed to generate questions", "response": []}), 500
+        
         return jsonify({"response": response})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"QuizBot Error: {str(e)}")
+        return jsonify({"error": str(e), "response": []}), 500
 
 
 @app.route("/LearnBot", methods=["POST"])

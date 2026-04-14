@@ -15,7 +15,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 // --- CONSTANTS ---
-const API_BASE_URL = "https://finalyr-1.onrender.com/api/game";
+const API_BASE_URL = "http://localhost:5001/api/game";
 // Keys matching the exact 'gameName' strings saved to the backend
 const GAME_SCORE_KEYS = [
   { key: 'ColorMatchingGame', name: 'ColorMatchingGame' },

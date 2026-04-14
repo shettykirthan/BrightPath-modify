@@ -49,7 +49,7 @@ export default function SignUpPage() {
     setIsLoading(true)
 
     try {
-      const res = await fetch("https://finalyr-1.onrender.com/api/auth/signup", {
+      const res = await fetch("http://localhost:5001/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // 3. Include childAge in the JSON payload sent to the backend

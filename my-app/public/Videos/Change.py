@@ -50,7 +50,7 @@ def ImageGen(text):
     client_1 = InferenceClient("stabilityai/stable-diffusion-3.5-large-turbo", token="")
     PromptImage = model.generate_content(f"Generate a scenario based very short prompt to generate an image based on the following context: {ParaList[3]}")
     image = client_1.text_to_image(PromptImage.text)
-    image.save(f"public/Image4.png")
+    image.save(f"public/Images/Image4.png")
     # print(ParaList[0])
 
 @app.route("/QuizBot", methods=["POST"])

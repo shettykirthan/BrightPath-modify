@@ -32,7 +32,7 @@ export default function LoginPage() {
     setError("")
 
     try {
-      const res = await fetch("https://finalyr-1.onrender.com/api/auth/signin", {
+      const res = await fetch("http://localhost:5001/api/auth/signin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),

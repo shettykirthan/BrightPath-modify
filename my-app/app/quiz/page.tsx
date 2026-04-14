@@ -9,7 +9,13 @@ import QuizBox from '../../components/QuizBox'
 import Bot from '../../components/Bot'
 import { Button } from '@/components/ui/button'
 
-const questions = [
+interface Question {
+  question: string;
+  options: string[];
+  correctAnswer: string;
+}
+
+const defaultQuestions: Question[] = [
   {
     question: "What color is the sky on a clear day?",
     options: ["Blue", "Green", "Red", "Yellow"],
@@ -43,7 +49,7 @@ export default function QuizPage() {
   const [score, setScore] = useState(0)
   const [lastAnswerCorrect, setLastAnswerCorrect] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(false);
-  const [questions, setQuestions] = useState([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [countdown, setCountdown] = useState(20); // Countdown state for the timer
   const [isButtonDisabled, setIsButtonDisabled] = useState(true); // State to disable the start button initially
 
@@ -85,7 +91,7 @@ export default function QuizPage() {
 
       const data = await response.json();
       console.log('Fetched Questions1 :', data);
-      const fetchedQuestions = data.response.map((item) => ({
+      const fetchedQuestions = data.response.map((item: any) => ({
         question: item.question,
         options: item.options,
         correctAnswer: item.correctAnswer,
@@ -109,8 +115,19 @@ export default function QuizPage() {
   }
 
   const handleAnswer = (selectedOption: string) => {
-    const selectedLetter = selectedOption.charAt(0).toLowerCase()
-    const isCorrect = selectedLetter === questions[currentQuestion].correctAnswer
+    const correctAnswerLetter = questions[currentQuestion].correctAnswer.toLowerCase().trim()
+    const optionIndex = questions[currentQuestion].options.indexOf(selectedOption)
+    const selectedLetter = String.fromCharCode(97 + optionIndex) // Convert index to letter (a, b, c, d)
+    const isCorrect = selectedLetter === correctAnswerLetter
+    
+    // Debug logging
+    console.log('Selected Option:', selectedOption)
+    console.log('Option Index:', optionIndex)
+    console.log('Selected Letter:', selectedLetter)
+    console.log('Correct Answer Letter:', correctAnswerLetter)
+    console.log('Is Correct:', isCorrect)
+    console.log('Options:', questions[currentQuestion].options)
+    
     setLastAnswerCorrect(isCorrect)
     if (isCorrect) {
       setScore(score + 1)
@@ -159,12 +176,16 @@ export default function QuizPage() {
               <Bot isCorrect={lastAnswerCorrect} />
             </div>
             <div className="w-full max-w-2xl">
-              <QuizBox 
-                question={questions[currentQuestion].question}
-                options={questions[currentQuestion].options}
-                onAnswer={handleAnswer}
-                isCorrect={lastAnswerCorrect}
-              />
+              {questions.length > 0 && questions[currentQuestion] ? (
+                <QuizBox 
+                  question={questions[currentQuestion].question}
+                  options={questions[currentQuestion].options}
+                  onAnswer={handleAnswer}
+                  isCorrect={lastAnswerCorrect}
+                />
+              ) : (
+                <div className="text-center text-lg text-gray-600">Loading questions...</div>
+              )}
             </div>
           </div>
         )}

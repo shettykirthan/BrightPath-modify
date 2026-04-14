@@ -28,7 +28,7 @@ interface ShapeItem {
 }
 
 // ⚠️ IMPORTANT: Define constants for API and Game Name
-const API_BASE_URL = "https://finalyr-1.onrender.com/api/game";
+const API_BASE_URL = "http://localhost:5001/api/game";
 const GAME_NAME = "ShapeSortingGame";
 
 export default function ShapeSortingGame() {
