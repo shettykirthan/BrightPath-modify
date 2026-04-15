@@ -18,14 +18,15 @@ app = Flask(__name__)
 CORS(app)
 
 
-#paste api keys
 
 try:
     genai.configure(api_key=GEMINI_API_KEY)
     gemini_model = genai.GenerativeModel("gemini-2.5-flash")
+    gemini_model_stories = genai.GenerativeModel("gemini-1.5-flash")
 except Exception as e:
     print(f"Error configuring Gemini: {e}")
     gemini_model = None
+    gemini_model_stories = None
 
 try:
     client_sd = InferenceClient("stabilityai/stable-diffusion-xl-base-1.0", token=HF_TOKEN_SD)
@@ -101,8 +102,8 @@ def get_age_appropriate_story_instructions(age):
 
 def storyTeller(input_text, age=10, image_file=None):
     story_instructions = get_age_appropriate_story_instructions(age)
-    if gemini_model is None:
-        raise ValueError("Gemini model is not initialized.")
+    if gemini_model_stories is None:
+        raise ValueError("Gemini story model is not initialized.")
     
     prompt = f"""
 {story_instructions}
@@ -124,9 +125,9 @@ Tell the story in EXACTLY 4 paragraphs.
 """
 
     if image_file:
-        response = gemini_model.generate_content([prompt, image_file])
+        response = gemini_model_stories.generate_content([prompt, image_file])
     else:
-        response = gemini_model.generate_content(prompt)
+        response = gemini_model_stories.generate_content(prompt)
 
     raw_text = response.text
     
@@ -289,7 +290,7 @@ def ImageGen(text, drawing_desc="scribbles"):
                 
             PromptImage = gemini_model.generate_content(SD_prompt)
             image = client_sd_xl.text_to_image(PromptImage.text)
-            image.save(f"{public_folder}/Image4.png")
+            image.save(f"{images_folder}/Image4.png")
     except Exception as e:
         print(f"Error generating final image: {e}")
 

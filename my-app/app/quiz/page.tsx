@@ -115,18 +115,26 @@ export default function QuizPage() {
   }
 
   const handleAnswer = (selectedOption: string) => {
-    const correctAnswerLetter = questions[currentQuestion].correctAnswer.toLowerCase().trim()
+    const correctAnswerRaw = questions[currentQuestion].correctAnswer.toLowerCase().trim()
+    const optionRaw = selectedOption.toLowerCase().trim()
     const optionIndex = questions[currentQuestion].options.indexOf(selectedOption)
     const selectedLetter = String.fromCharCode(97 + optionIndex) // Convert index to letter (a, b, c, d)
-    const isCorrect = selectedLetter === correctAnswerLetter
+    
+    const isCorrect = 
+      correctAnswerRaw === selectedLetter ||
+      correctAnswerRaw.startsWith(selectedLetter + ')') ||
+      correctAnswerRaw.startsWith(selectedLetter + '.') ||
+      correctAnswerRaw.startsWith(selectedLetter + ' ') ||
+      correctAnswerRaw === optionRaw ||
+      (optionRaw.length > 2 && correctAnswerRaw.includes(optionRaw)) ||
+      (correctAnswerRaw.length > 2 && optionRaw.includes(correctAnswerRaw));
     
     // Debug logging
     console.log('Selected Option:', selectedOption)
     console.log('Option Index:', optionIndex)
     console.log('Selected Letter:', selectedLetter)
-    console.log('Correct Answer Letter:', correctAnswerLetter)
+    console.log('Correct Answer Raw:', correctAnswerRaw)
     console.log('Is Correct:', isCorrect)
-    console.log('Options:', questions[currentQuestion].options)
     
     setLastAnswerCorrect(isCorrect)
     if (isCorrect) {

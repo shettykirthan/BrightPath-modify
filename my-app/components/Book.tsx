@@ -18,7 +18,7 @@ const storyParagraphs = storyText.split('\n\n').filter((p: string) => p.trim());
 // Ensure we have at least 4 pages (one for each generated image)
 const pages = storyParagraphs.map((paragraph: string, index: number) => ({
   content: paragraph.trim(),
-  image: `/Images/Image${index}.png?timestamp=${new Date().getTime()}`,
+  image: `/Images/Image${index + 1}.png?timestamp=${new Date().getTime()}`,
 }));
 // ...existing code...
   const stopReading = () => {
@@ -138,7 +138,7 @@ const speakText = (text: string) => {
             <div className="absolute left-[400px] w-[400px] h-full bg-white p-8">
               <div className="w-full h-full relative">
                 <Image
-                  src={pages[currentPage + 1]?.image || '/Images/placeholder.svg'}
+                  src={pages[currentPage]?.image || '/Images/placeholder.svg'}
                   alt="Story illustration"
                   fill
                   unoptimized
