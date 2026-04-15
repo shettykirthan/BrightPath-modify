@@ -22,7 +22,7 @@ CORS(app)
 try:
     genai.configure(api_key=GEMINI_API_KEY)
     gemini_model = genai.GenerativeModel("gemini-2.5-flash")
-    gemini_model_stories = genai.GenerativeModel("gemini-1.5-flash")
+    gemini_model_stories = genai.GenerativeModel("gemini-2.5-flash")
 except Exception as e:
     print(f"Error configuring Gemini: {e}")
     gemini_model = None
@@ -365,7 +365,11 @@ def learnBot():
         else:
             return jsonify({"error": "No valid input provided"}), 400
 
-        return jsonify({"response": response.text})
+        response_text = response.text
+        if "jailbroken" in response_text.lower():
+            return jsonify({"response": "Cant answer"})
+
+        return jsonify({"response": response_text})
     except Exception as e:
         print("Error in LearnBot:", e)
         return jsonify({"error": "Failed to generate response", "details": str(e)}), 500

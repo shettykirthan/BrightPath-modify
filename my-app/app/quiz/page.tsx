@@ -52,6 +52,7 @@ export default function QuizPage() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [countdown, setCountdown] = useState(20); // Countdown state for the timer
   const [isButtonDisabled, setIsButtonDisabled] = useState(true); // State to disable the start button initially
+  const [questionAttempts, setQuestionAttempts] = useState<any[]>([]);
 
   const searchParams = useSearchParams()
   const story = searchParams.get('story') // Retrieve 'story' from query params
@@ -112,6 +113,7 @@ export default function QuizPage() {
     setScore(0)
     setCurrentQuestion(0)
     setLastAnswerCorrect(null)
+    setQuestionAttempts([])
   }
 
   const handleAnswer = (selectedOption: string) => {
@@ -136,16 +138,44 @@ export default function QuizPage() {
     console.log('Correct Answer Raw:', correctAnswerRaw)
     console.log('Is Correct:', isCorrect)
     
-    setLastAnswerCorrect(isCorrect)
-    if (isCorrect) {
-      setScore(score + 1)
+    const attempt = {
+      questionText: questions[currentQuestion].question,
+      selectedOption: selectedOption,
+      correctAnswer: questions[currentQuestion].correctAnswer,
+      isCorrect: isCorrect
     }
-    setTimeout(() => {
+    const updatedAttempts = [...questionAttempts, attempt]
+    setQuestionAttempts(updatedAttempts)
+    
+    setLastAnswerCorrect(isCorrect)
+    const newScore = isCorrect ? score + 1 : score
+    if (isCorrect) {
+      setScore(newScore)
+    }
+    setTimeout(async () => {
       if (currentQuestion < questions.length - 1) {
         setCurrentQuestion(currentQuestion + 1)
         setLastAnswerCorrect(null)
       } else {
         setQuizStarted(false)
+        try {
+          const user = JSON.parse(sessionStorage.getItem("user") || "{}");
+          if (user._id || user.id) {
+            await fetch("http://localhost:5001/api/quiz/save", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                userId: user._id || user.id,
+                storyTopic: story || "General Quiz",
+                score: newScore,
+                totalQuestions: questions.length,
+                questionsData: updatedAttempts
+              })
+            });
+          }
+        } catch (err) {
+          console.error("Failed to save quiz progress:", err);
+        }
       }
     }, 1500)
   }
